@@ -17,6 +17,4 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/telegram-webhook', [TelegramController::class, 'handleWebhook']);
 
-Route::post('/api/telegram/webhook', [TelegramController::class, 'handleWebhook']);
-
 Route::get('/set-webhook', [TelegramController::class, 'setWebhook']);

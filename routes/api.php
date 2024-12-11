@@ -15,4 +15,3 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::post('/gpt', [OpenAIController::class, 'getResponse']);
