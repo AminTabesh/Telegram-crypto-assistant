@@ -29,15 +29,18 @@ class TelegramController extends Controller
 
         $message = $request->input('message') ?? $request->input('channel_post') ?? null;
 
+
         if ($message) {
             $chatId = $message['chat']['id'];
             $text = $message['text'] ?? '';
             $chatType = $message['chat']['type'];
+            $channelName = $message['sender_chat']['title'] ?? 'Private';
 
             TelegramMessage::create([
                 'chat_id' => $chatId,
                 'message_text' => $text,
                 'chat_type' => $chatType,
+                'channel_name' =>$channelName
             ]);
 
             Log::info("Message from {$chatType} saved to database.");
@@ -64,38 +67,44 @@ class TelegramController extends Controller
 
     // Periodically check the channel for new messages (alternative approach)
     public function checkChannelForMessages()
-    {
-        Log::info('Checking for new messages in the channel...');
+{
+    Log::info('Checking for new messages in the channels...');
 
-        $channelId = env('TELEGRAM_CHANNEL_ID');
-        $botToken = env('TELEGRAM_BOT_TOKEN');
-        $url = "https://api.telegram.org/bot{$botToken}/getUpdates";
+    $botToken = env('TELEGRAM_BOT_TOKEN');
+    $url = "https://api.telegram.org/bot{$botToken}/getUpdates";
+    $response = Http::get($url);
 
-        $response = Http::get($url);
-        Log::info('Telegram Channel Updates: ', $response->json());
+    Log::info('Telegram Channel Updates: ', $response->json());
 
-        if ($response->successful()) {
-            $updates = $response->json()['result'];
+    if ($response->successful()) {
+        $updates = $response->json()['result'];
+        $channelIds = explode(',', env('TELEGRAM_CHANNEL_IDS')); // Assuming multiple channel IDs are stored in .env
 
-            foreach ($updates as $update) {
-                if (isset($update['message']['chat']['id']) && $update['message']['chat']['id'] == $channelId) {
-                    $messageText = $update['message']['text'] ?? 'No text provided';
-                    $chatType = $update['message']['chat']['type'];
+        foreach ($updates as $update) {
+            $chatId = $update['message']['chat']['id'] ?? null;
 
-                    TelegramMessage::create([
-                        'chat_id' => $channelId,
-                        'message_text' => $messageText,
-                        'chat_type' => $chatType,
-                    ]);
+            if (in_array($chatId, $channelIds)) {
+                $messageText = $update['message']['text'] ?? 'No text provided';
+                $chatType = $update['message']['chat']['type'];
+                $channelName = $update['message']['sender_chat']['title'] || "Private";
+                Log::info('Update: ' . json_encode($update));
 
-                    $responseText = $this->getChatGptResponse($messageText);
-                    $this->sendTelegramMessage($channelId, $responseText);
-                }
+                TelegramMessage::create([
+                    'chat_id' => $chatId,
+                    'message_text' => $messageText,
+                    'chat_type' => $chatType,
+                    'channel_name' => $channelName
+                ]);
+
+                $responseText = $this->getChatGptResponse($messageText);
+                $this->sendTelegramMessage($chatId, $responseText);
             }
         }
-
-        return response()->json(['status' => 'Checked for new messages']);
     }
+
+    return response()->json(['status' => 'Checked for new messages in multiple channels']);
+}
+
 
     // Send a message to ChatGPT and get the response
     private function getChatGptResponse($text)
