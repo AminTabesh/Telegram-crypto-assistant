@@ -12,7 +12,7 @@ class TelegramController extends Controller
     public function setWebhook()
     {
         $botToken = env('TELEGRAM_BOT_TOKEN');
-        $webhookUrl = url('https://5e59-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
+        $webhookUrl = url('https://b2d1-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
         $url = "https://api.telegram.org/bot{$botToken}/setWebhook?url={$webhookUrl}/telegram-webhook";
 
         $response = Http::get($url);
@@ -26,8 +26,7 @@ class TelegramController extends Controller
         Log::info('Received Telegram Update:', $request->all());
         
         $message = $request->input('message') ?? $request->input('channel_post') ?? null;
-        
-        Log::info('xxxxxxxxxxxxxxxxx:', $message); //TODO: Delete this line.
+    
 
         if ($message) {
             $chatId = $message['chat']['id'];
@@ -82,43 +81,45 @@ class TelegramController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
-    public function checkChannelForMessages()
-    {
-        $botToken = env('TELEGRAM_BOT_TOKEN');
-        $url = "https://api.telegram.org/bot{$botToken}/getUpdates";
-        $response = Http::get($url);
+    //NOTE: Periodic check for updates in the channel.
 
-        if ($response->successful()) {
-            $updates = $response->json()['result'];
-            $channelIds = explode(',', env('TELEGRAM_CHANNEL_IDS'));
+    // public function checkChannelForMessages()
+    // {
+    //     $botToken = env('TELEGRAM_BOT_TOKEN');
+    //     $url = "https://api.telegram.org/bot{$botToken}/getUpdates";
+    //     $response = Http::get($url);
 
-            foreach ($updates as $update) {
-                $chatId = $update['message']['chat']['id'] ?? null;
+    //     if ($response->successful()) {
+    //         $updates = $response->json()['result'];
+    //         $channelIds = explode(',', env('TELEGRAM_CHANNEL_IDS'));
 
-                if (in_array($chatId, $channelIds)) {
-                    $messageText = $update['message']['text'] ?? 'No text provided';
-                    TelegramMessage::create([
-                        'chat_id' => $chatId,
-                        'message_text' => $messageText,
-                        'chat_type' => $update['message']['chat']['type'],
-                    ]);
+    //         foreach ($updates as $update) {
+    //             $chatId = $update['message']['chat']['id'] ?? null;
 
-                    $responseText = $this->getChatGptResponse($messageText);
-                    $this->sendTelegramMessage($chatId, $responseText);
-                }
-            }
-        }
+    //             if (in_array($chatId, $channelIds)) {
+    //                 $messageText = $update['message']['text'] ?? 'No text provided';
+    //                 TelegramMessage::create([
+    //                     'chat_id' => $chatId,
+    //                     'message_text' => $messageText,
+    //                     'chat_type' => $update['message']['chat']['type'],
+    //                 ]);
 
-        return response()->json(['status' => 'Checked for new messages']);
-    }
+    //                 $responseText = $this->getChatGptResponse($messageText);
+    //                 $this->sendTelegramMessage($chatId, $responseText);
+    //             }
+    //         }
+    //     }
+
+    //     return response()->json(['status' => 'Checked for new messages']);
+    // }
 
     private function getChatGptResponse($text)
     {
         $response = Http::withToken(env('OPENAI_API_KEY'))
             ->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4',
+                'model' => 'gpt-4-turbo', //Note: Can be 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo' 
                 'messages' => [
-                    ['role' => 'system', 'content' => 'You are a helpful assistant.'], //TODO: Context can be changed here
+                    ['role' => 'system', 'content' => 'You are a helpful crypto trading assistant, you will be provided with some questions about the market which you should answer.'], //TODO: Context can be changed here
                     ['role' => 'user', 'content' => $text],
                 ],
             ]);
@@ -181,7 +182,7 @@ class TelegramController extends Controller
         foreach ($channelIds as $target){
 
             $data = [
-                'chat_id' => $target, // ChannelId can be the numeral Id or the username
+                'chat_id' => $target, // The numeral telegram id
                 'text' => $text,
             ];
             
