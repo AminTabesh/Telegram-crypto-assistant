@@ -68,9 +68,9 @@ class TelegramController extends Controller
                 if ($text) {
                     $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
                     $gptResponse = $this->getChatGptResponse($text);
-                    $botResponseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . "Url: $messageUrl" . "\n\n" . $gptResponse;
+                    $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
 
-                    $targetChannelMessage = "Signal Url: {$messageUrl} \n\n Analysis: \n $gptResponse";
+                    $targetChannelMessage = "Signal Url: {$messageUrl} \n\n $gptResponse";
 
                     $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
                     $this->sendToChannel($targetChannelMessage);
@@ -119,7 +119,18 @@ class TelegramController extends Controller
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4-turbo', //Note: Can be 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo' 
                 'messages' => [
-                    ['role' => 'system', 'content' => 'You are a helpful crypto trading assistant, you will be provided with some questions about the market which you should answer.'], //TODO: Context can be changed here
+                    ['role' => 'system', 'content' => "You will be provided with some trade signals.First, return the signal itself.Then title your thoughts with 'AI analysis' and a flair emoji,then rate the signal's risk from 1-10. 1 is the lowest and 10 is the highest. Use an emoji after the percent, green circle for low risk, yellow circle for medium risk and red circle for high risk. Afterwards, include a very brief explaination of why you rated it like that and what you think about the signal generally.At the end, tell if you recomend this or not. The exact pattern that you have to answer in is: 
+                        
+                    SIGNAL📈:
+                    // the signal here
+
+                    AI Analysis ✨:
+                    Risk: Your estimation / 10 (the emoji here)
+                    
+                    Explanation: //Your brief report here
+
+                    AI Recomendation: //can be 'Suggested ✅, Not sure  or Not suggested❌'
+                        "], //TODO: Context can be changed here
                     ['role' => 'user', 'content' => $text],
                 ],
             ]);
