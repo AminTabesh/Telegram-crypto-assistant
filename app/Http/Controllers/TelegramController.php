@@ -44,14 +44,7 @@ class TelegramController extends Controller
             }
 
 
-            if ($text) {
-                TelegramMessage::create([
-                    'chat_id' => $chatId,
-                    'message_text' => $text,
-                    'chat_type' => $chatType,
-                    'channel_name' => $channelName
-                ]);
-            }
+            
 
             if (isset($message['forward_from_message_id'])) {
                 $responseText = $this->getChatGptResponse($text);
@@ -61,6 +54,14 @@ class TelegramController extends Controller
             if ($chatType === 'private') {
                 $responseText = $this->getChatGptResponse($text);
                 $this->sendTelegramMessage($chatId, $responseText, $message['message_id']);
+                if ($text) {
+                    TelegramMessage::create([
+                        'chat_id' => $chatId,
+                        'message_text' => $text,
+                        'chat_type' => $chatType,
+                        'channel_name' => $channelName,
+                    ]);
+                }
             }
 
             if ($chatType === 'channel') {
@@ -68,14 +69,33 @@ class TelegramController extends Controller
                 if ($text) {
                     $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
                     $gptResponse = $this->getChatGptResponse($text);
-                    $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
+            
+                    preg_match('/Risk:\s*(\d+)/', $gptResponse, $matches);
+            
+                    if (isset($matches[1])) {
+                        $gptRating = $matches[1];
+                    } else {
 
+                        $gptRating = 'No rating found';
+                    }
+                    $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
                     $targetChannelMessage = "Signal Url: {$messageUrl} \n\n $gptResponse";
 
+                    if ($text) {
+                        TelegramMessage::create([
+                            'chat_id' => $chatId,
+                            'message_text' => $text,
+                            'chat_type' => $chatType,
+                            'channel_name' => $channelName,
+                            'AI_Rating' => $gptRating
+                        ]);
+                    }
+            
                     $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
                     $this->sendToChannel($targetChannelMessage);
                 }
             }
+            
         }
 
         return response()->json(['status' => 'ok']);
@@ -129,7 +149,7 @@ class TelegramController extends Controller
                     
                     Explanation: //Your brief report here
 
-                    AI Recomendation: //can be 'Suggested ✅, Not sure  or Not suggested❌'
+                    AI Recomendation: //can be 'Suggested ✅, Not sure🤔 or Not suggested❌'
                         "], //TODO: Context can be changed here
                     ['role' => 'user', 'content' => $text],
                 ],
