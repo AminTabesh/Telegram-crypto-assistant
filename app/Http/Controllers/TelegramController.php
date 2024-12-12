@@ -45,12 +45,14 @@ class TelegramController extends Controller
             }
 
 
-            TelegramMessage::create([
-                'chat_id' => $chatId,
-                'message_text' => $text,
-                'chat_type' => $chatType,
-                'channel_name' => $channelName
-            ]);
+            if ($text) {
+                TelegramMessage::create([
+                    'chat_id' => $chatId,
+                    'message_text' => $text,
+                    'chat_type' => $chatType,
+                    'channel_name' => $channelName
+                ]);
+            }
 
             if (isset($message['forward_from_message_id'])) {
                 $responseText = $this->getChatGptResponse($text);
@@ -67,8 +69,12 @@ class TelegramController extends Controller
                 if ($text) {
                     $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
                     $gptResponse = $this->getChatGptResponse($text);
-                    $responseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . "Url: $messageUrl" . "\n\n" . $gptResponse;
-                    $this->sendTelegramMessage($botChatId, $responseText, $message['message_id']);
+                    $botResponseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . "Url: $messageUrl" . "\n\n" . $gptResponse;
+
+                    $targetChannelMessage = "Signal Url: {$messageUrl} \n\n Analysis: \n $gptResponse";
+
+                    $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
+                    $this->sendToChannel($targetChannelMessage);
                 }
             }
         }
@@ -164,5 +170,32 @@ class TelegramController extends Controller
         } else {
             Log::error('Telegram Forward Message Error: ', $response->json());
         }
+    }
+
+    private function sendToChannel($text)
+    {
+        $channelIds = explode(',', env('TELEGRAM_SEND_CHANNELS_IDS'));
+        $botToken = env('TELEGRAM_BOT_TOKEN');
+        $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
+
+        foreach ($channelIds as $target){
+
+            $data = [
+                'chat_id' => $target, // ChannelId can be the numeral Id or the username
+                'text' => $text,
+            ];
+            
+            Log::info('dataaaaaaaaaaaaaa: ', $data);
+            $response = Http::post($url, $data);
+    
+            if ($response->successful()) {
+                Log::info('Message sent to channel: ', $response->json());
+            } else {
+                Log::error('Failed to send message to channel: ', $response->json());
+            }
+
+        }
+
+        
     }
 }
