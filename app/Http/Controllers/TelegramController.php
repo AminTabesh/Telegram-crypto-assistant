@@ -31,7 +31,7 @@ class TelegramController extends Controller
 
         if ($message) {
             $chatId = $message['chat']['id'];
-            $text = $message['text'] ?? '';
+            $text = $message['text'] ?? null;
             $chatType = $message['chat']['type'];
             $channelName = $message['chat']['title'] ?? "Direct" ;
             $chatUsername = $message['chat']['username'] ?? null;
@@ -64,11 +64,12 @@ class TelegramController extends Controller
 
             if ($chatType === 'channel') {
                 $botChatId = env('TELEGRAM_BOT_ID');
-                $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
-
-                $gptResponse = $this->getChatGptResponse($text);
-                $responseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . "Url: $messageUrl" . "\n\n" . $gptResponse;
-                $this->sendTelegramMessage($botChatId, $responseText, $message['message_id']);
+                if ($text) {
+                    $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
+                    $gptResponse = $this->getChatGptResponse($text);
+                    $responseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . "Url: $messageUrl" . "\n\n" . $gptResponse;
+                    $this->sendTelegramMessage($botChatId, $responseText, $message['message_id']);
+                }
             }
         }
 
