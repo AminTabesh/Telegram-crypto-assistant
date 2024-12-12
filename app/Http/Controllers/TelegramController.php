@@ -12,7 +12,7 @@ class TelegramController extends Controller
     public function setWebhook()
     {
         $botToken = env('TELEGRAM_BOT_TOKEN');
-        $webhookUrl = url('https://f626-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deploying!!!
+        $webhookUrl = url('https://5e59-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
         $url = "https://api.telegram.org/bot{$botToken}/setWebhook?url={$webhookUrl}/telegram-webhook";
 
         $response = Http::get($url);
@@ -27,11 +27,23 @@ class TelegramController extends Controller
         
         $message = $request->input('message') ?? $request->input('channel_post') ?? null;
         
+        Log::info('xxxxxxxxxxxxxxxxx:', $message); //TODO: Delete this line.
+
         if ($message) {
             $chatId = $message['chat']['id'];
             $text = $message['text'] ?? '';
             $chatType = $message['chat']['type'];
             $channelName = $message['chat']['title'] ?? "Direct" ;
+            $chatUsername = $message['chat']['username'] ?? null;
+            $messageId = $message['message_id'] ?? $message['channel_post']['message_id'];
+
+            if ($chatUsername && $messageId) {
+
+                $messageUrl = "https://t.me/$chatUsername/$messageId";
+            }else {
+                $messageUrl = "The channel is private.";
+            }
+
 
             TelegramMessage::create([
                 'chat_id' => $chatId,
@@ -53,8 +65,9 @@ class TelegramController extends Controller
             if ($chatType === 'channel') {
                 $botChatId = env('TELEGRAM_BOT_ID');
                 $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
+
                 $gptResponse = $this->getChatGptResponse($text);
-                $responseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . $gptResponse;
+                $responseText = "Replying to " . '"'. substr($text, 0, 100) . "... \" :" . "\n\n" . "Url: $messageUrl" . "\n\n" . $gptResponse;
                 $this->sendTelegramMessage($botChatId, $responseText, $message['message_id']);
             }
         }
