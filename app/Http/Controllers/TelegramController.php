@@ -3,12 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\TelegramMessage;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
+
+use function PHPUnit\Framework\isEmpty;
 
 class TelegramController extends Controller
 {
@@ -61,7 +60,7 @@ class TelegramController extends Controller
             $responseText = $this->getChatGptResponse($text);
             $this->sendTelegramMessage($chatId, $responseText, $message['message_id']);
 
-            if ($text) {
+            if ($text && $responseText !== "Please send a valid signal to evaluate.") {
                 TelegramMessage::create([
                     'chat_id' => $chatId,
                     'message_text' => $text,
@@ -74,30 +73,35 @@ class TelegramController extends Controller
         // Process channel posts
         if ($chatType === 'channel') {
             if ($text) {
-                $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
                 $gptResponse = $this->getChatGptResponse($text);
 
-                // Extract AI Rating
-                preg_match('/Risk:\s*(\d+)/', $gptResponse, $matches);
-                $gptRating = $matches[1] ?? null;
+                if($gptResponse !== "Please send a valid signal to evaluate."){
+                    $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
+                    // Extract AI Rating
+                    preg_match('/Risk:\s*(\d+)/', $gptResponse, $matches);
+                    $gptRating = $matches[1] ?? null;
 
-                $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
-                $targetChannelMessage = "Signal Url: {$messageUrl} \n\n $gptResponse";
+                    $avgRating = TelegramController::calculateAvgRating($channelName);
 
-                // Save message in TelegramMessage table
-                TelegramMessage::create([
-                    'chat_id' => $chatId,
-                    'message_text' => $text,
-                    'chat_type' => $chatType,
-                    'channel_name' => $channelName,
-                    'AI_Rating' => $gptRating
-                ]);
+                    $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
+                    $targetChannelMessage = "Signal Url: {$messageUrl} \n\n Channel's average risk rate: {$avgRating} \n\n {$gptResponse}";
 
-                // Save message in dynamic table
-                $this->saveMessageToDynamicTable($channelName, $chatId, $messageId, $text, $gptRating);
+                    // Save message in TelegramMessage table
+                    TelegramMessage::create([
+                        'chat_id' => $chatId,
+                        'message_text' => $text,
+                        'chat_type' => $chatType,
+                        'channel_name' => $channelName,
+                        'AI_Rating' => $gptRating
+                    ]);
 
-                $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
-                $this->sendToChannel($targetChannelMessage);
+                    $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
+                    $this->sendToChannel($targetChannelMessage);
+                }else {
+                    Log::info("GPT no signal: The sent message is not a trade signal, so it got ignored.");
+
+                }
+
             }
         }
     }
@@ -144,9 +148,9 @@ class TelegramController extends Controller
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4-turbo', //Note: Can be 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo' 
                 'messages' => [
-                    ['role' => 'system', 'content' => "You will be provided with some trade signals. First, return the signal itself.Then title your thoughts with 'AI analysis' and a flair emoji,then rate the signal's risk from 1-10. 1 is the lowest and 10 is the highest. Use an emoji after the percent, green circle for low risk, yellow circle for medium risk and red circle for high risk. Afterwards, include a very brief explanation of why you rated it like that and what you think about the signal generally.At the end, tell if you recomend this or not. The exact pattern that you have to answer in is: 
+                    ['role' => 'system', 'content' => "First of all, check if the provided prompt is a trade signal. If not, return the exact text of 'Please send a valid signal to evaluate.' .If not,  You will be provided with some trade signals. First, return the signal itself.Then title your thoughts with 'AI analysis' and a flair emoji,then rate the signal's risk from 1-10. 1 is the lowest and 10 is the highest. Use an emoji after the percent, green circle for low risk, yellow circle for medium risk and red circle for high risk. Afterwards, include a very brief explanation of why you rated it like that and what you think about the signal generally.At the end, tell if you recomend this or not. The exact pattern that you have to answer in is: 
                         
-                    *SIGNAL*📈:
+                    SIGNAL📈:
                     // the signal here
 
                     AI Analysis ✨:
@@ -155,7 +159,9 @@ class TelegramController extends Controller
                     Explanation: //Your brief report here
 
                     AI Recommendation: //can be 'Suggested ✅, Not sure🤔 or Not suggested❌'
-                        "], //TODO: Context can be changed here
+                        
+
+"], //TODO: Context can be changed here
                     ['role' => 'user', 'content' => $text],
                 ],
             ]);
@@ -222,7 +228,6 @@ class TelegramController extends Controller
                 'text' => $text,
             ];
             
-            Log::info('dataaaaaaaaaaaaaa: ', $data);
             $response = Http::post($url, $data);
     
             if ($response->successful()) {
@@ -235,45 +240,22 @@ class TelegramController extends Controller
 
         
     }
-    private function saveMessageToDynamicTable($tableName, $chatId, $messageId, $text, $rating=null)
-    {
-        // Ensure the table exists
-        $tableName = $this->normalizeTableName($tableName);
-        $this->ensureTableExists($tableName);
 
+    public static function calculateAvgRating($channelName)
+{
+    $messagesArray = TelegramMessage::where('channel_name', $channelName)
+        ->whereNotNull('AI_Rating')
+        ->get();
 
-        // Insert the message into the dynamic table
-        DB::table($tableName)->insert([
-            'chat_id' => $chatId,
-            'message_id' => $messageId,
-            'text' => $text,
-            'AI_Rating' => $rating,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+    if ($messagesArray->isEmpty()) {
+        return "No data found.";
     }
 
-    private function ensureTableExists($tableName)
-    {
-        $tableName = $this->normalizeTableName($tableName);
-        if (!Schema::hasTable($tableName)) {
-            Schema::create($tableName, function (Blueprint $table) {
-                $table->id();
-                $table->bigInteger('chat_id');
-                $table->bigInteger('message_id')->nullable();
-                $table->text('text')->nullable();
-                $table->timestamps();
-                $table->integer('AI_Rating')->nullable();
-            });
-            Log::info("Created table: {$tableName}");
-        }
+    $averageRating = round($messagesArray->avg('AI_Rating'), 1);
+    $riskLevel = $averageRating < 6 ? 'low' : ($averageRating < 8 ? 'medium' : 'high');
+    $emoji = $riskLevel === 'low' ? '🟢' : ($riskLevel === 'medium' ? '🟡' : '🔴');
 
-    }
-
-    private function normalizeTableName($name)
-    {
-        // Replace special characters with underscores and limit length
-        return substr(preg_replace('/[^a-zA-Z0-9_]/', '_', $name), 0, 64);
-    }
+    return "{$averageRating}/10, This channel usually provides {$riskLevel} risk signals. {$emoji}";
 }
 
+}
