@@ -84,7 +84,7 @@ class TelegramController extends Controller
                     $avgRating = TelegramController::calculateAvgRating($channelName);
 
                     $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
-                    $targetChannelMessage = "Signal Url: {$messageUrl} \n\n Channel's average risk rate: {$avgRating} \n\n {$gptResponse}";
+                    $targetChannelMessage = "Channel name: {$channelName} \n\n Signal Url: {$messageUrl} \n\n Channel's average risk rate: {$avgRating} \n\n {$gptResponse}";
 
                     // Save message in TelegramMessage table
                     TelegramMessage::create([
@@ -148,7 +148,7 @@ class TelegramController extends Controller
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4-turbo', //Note: Can be 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo' 
                 'messages' => [
-                    ['role' => 'system', 'content' => "First of all, check if the provided prompt is a trade signal. If not, return the exact text of 'Please send a valid signal to evaluate.' .If not,  You will be provided with some trade signals. First, return the signal itself.Then title your thoughts with 'AI analysis' and a flair emoji,then rate the signal's risk from 1-10. 1 is the lowest and 10 is the highest. Use an emoji after the percent, green circle for low risk, yellow circle for medium risk and red circle for high risk. Afterwards, include a very brief explanation of why you rated it like that and what you think about the signal generally.At the end, tell if you recomend this or not. The exact pattern that you have to answer in is: 
+                    ['role' => 'system', 'content' => "First of all, check if the provided prompt is a trade signal. If not, return the exact text of 'Please send a valid signal to evaluate.' .If not,  You will be provided with some trade signals. First, return the signal in a short form.Then title your thoughts with 'AI analysis' and a flair emoji,then rate the signal's risk from 1-10. 1 is the lowest and 10 is the highest. Use an emoji after the percent, green circle for low risk, yellow circle for medium risk and red circle for high risk. Afterwards, include a very brief explanation of why you rated it like that and what you think about the signal generally.At the end, tell if you recomend this or not. The exact pattern that you have to answer in is: 
                         
                     SIGNAL📈:
                     // the signal here
@@ -255,7 +255,7 @@ class TelegramController extends Controller
     $riskLevel = $averageRating < 6 ? 'low' : ($averageRating < 8 ? 'medium' : 'high');
     $emoji = $riskLevel === 'low' ? '🟢' : ($riskLevel === 'medium' ? '🟡' : '🔴');
 
-    return "{$averageRating}/10, This channel usually provides {$riskLevel} risk signals. {$emoji}";
+    return "{$averageRating} / 10, This channel usually provides {$riskLevel} risk signals. {$emoji}";
 }
 
 }
