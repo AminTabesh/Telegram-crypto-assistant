@@ -11,10 +11,12 @@ use function PHPUnit\Framework\isEmpty;
 
 class TelegramController extends Controller
 { 
+    private $telegramService;
+
     public function setWebhook()
     {
         $botToken = env('TELEGRAM_BOT_TOKEN');
-        $webhookUrl = url('https://8861-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
+        $webhookUrl = url('https://8e53-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
         $url = "https://api.telegram.org/bot{$botToken}/setWebhook?url={$webhookUrl}/telegram-webhook";
 
         $response = Http::get($url);
@@ -24,95 +26,108 @@ class TelegramController extends Controller
     }
 
     public function handleWebhook(Request $request)
-    {
-        Log::info('Received Telegram Update:', $request->all());
+{
+    Log::info('Received Telegram Update:', $request->all());
+    
+    $message = $request->input('message') ?? $request->input('channel_post') ?? null;
+
+    if ($message) {
+        $botChatId = env('TELEGRAM_BOT_ID');
+        $chatId = $message['chat']['id'];
+        $text = $message['text'] ?? null;
+        $caption = $message['caption'] ?? null;  // Caption (text below image)
+        $chatType = $message['chat']['type'];
+        $channelName = $message['chat']['title'] ?? "Direct";
+        $chatUsername = $message['chat']['username'] ?? null;
+        $messageId = $message['message_id'] ?? $message['channel_post']['message_id'];
+        $blockedChannelId = env('TELEGRAM_SEND_CHANNELS_IDS');
         
-        $message = $request->input('message') ?? $request->input('channel_post') ?? null;
+        // Block forwarding messages from a specific channel
+        if ($chatId == $blockedChannelId) {
+            Log::info("Blocked forwarding from target channel");
+            return response()->json(['status' => 'ignored']);
+        }
 
-        if ($message) {
-            $botChatId = env('TELEGRAM_BOT_ID');
-            $chatId = $message['chat']['id'];
-            $text = $message['text'] ?? null;
-            $chatType = $message['chat']['type'];
-            $channelName = $message['chat']['title'] ?? "Direct";
-            $chatUsername = $message['chat']['username'] ?? null;
-            $messageId = $message['message_id'] ?? $message['channel_post']['message_id'];
-
-            // Construct URL for public/private messages
-            $messageUrl = $chatUsername && $messageId 
-                ? "https://t.me/$chatUsername/$messageId" 
-                : "The channel is private.";
-
-            // Handle long messages
-            if ($text && strlen($text) > 550) {
-                $this->sendTelegramMessage($botChatId, "Message is too long. Please send a signal to evaluate.", $message['message_id']);
-                return response()->json(["status" => "Message is too long."]);
+        // Construct URL for public/private messages
+        $messageUrl = $chatUsername && $messageId 
+            ? "https://t.me/$chatUsername/$messageId" 
+            : "The channel is private.";
+    
+        // Handle long messages
+        if ($text && strlen($text) > 550) {
+            $this->sendTelegramMessage($botChatId, "Message is too long. Please send a signal to evaluate.", $message['message_id']);
+            return response()->json(["status" => "Message is too long."]);
+        }
+    
+        // Handle forwarded messages
+        if (isset($message['forward_from_message_id'])) {
+            $signalText = $text ?? $caption;  // Use text or caption if available
+            $responseText = $this->getChatGptResponse($signalText);
+            $this->sendTelegramMessage($chatId, $responseText, $message['forward_from_message_id']);
+        }
+    
+        // Process private chats
+        if ($chatType === 'private') {
+            $signalText = $text ?? $caption;  // Use text or caption if available
+            $responseText = $this->getChatGptResponse($signalText);
+            $this->sendTelegramMessage($chatId, $responseText, $message['message_id']);
+    
+            if ($signalText && $responseText !== "Please send a valid signal to evaluate.") {
+                TelegramMessage::create([
+                    'chat_id' => $chatId,
+                    'message_text' => $signalText,
+                    'chat_type' => $chatType,
+                    'channel_name' => $channelName,
+                ]);
             }
+        }
+    
+        // Process channel posts
+        if ($chatType === 'channel') {
+            if ($text || $caption) {
+                $signalText = $text ?? $caption;  // Use text or caption if available
+                $gptResponse = $this->getChatGptResponse($signalText);
+                $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
+                // $avgRating = TelegramController::calculateAvgRating($channelName);
 
-            // Handle forwarded messages
-            if (isset($message['forward_from_message_id'])) {
-                $responseText = $this->getChatGptResponse($text);
-                $this->sendTelegramMessage($chatId, $responseText, $message['forward_from_message_id']);
-            }
-
-            // Process private chats
-            if ($chatType === 'private') {
-                $responseText = $this->getChatGptResponse($text);
-                $this->sendTelegramMessage($chatId, $responseText, $message['message_id']);
-
-                if ($text && $responseText !== "Please send a valid signal to evaluate.") {
-                    TelegramMessage::create([
-                        'chat_id' => $chatId,
-                        'message_text' => $text,
-                        'chat_type' => $chatType,
-                        'channel_name' => $channelName,
-                    ]);
-                }
-            }
-
-            // Process channel posts
-            if ($chatType === 'channel') {
-                if ($text) {
-                    $gptResponse = $this->getChatGptResponse($text);
-                    $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
-                    $avgRating = TelegramController::calculateAvgRating($channelName);
-                    $targetChannelMessage = "Channel name: {$channelName} \n\n Signal Url: {$messageUrl} \n\n Channel's average risk rate: {$avgRating} \n\n {$gptResponse}";
-                    $signal = $this->extractSignal($gptResponse);
-
-                    if ($gptResponse !== "Please send a valid signal to evaluate.") {
-                        // Check AI Recommendation
-                        if (preg_match('/AI Recommendation:\s*(Suggested ✅)/', $gptResponse)) {
+                $signal = $this->extractSignal($gptResponse);
+    
+                if ($gptResponse !== "Please send a valid signal to evaluate.") {
+                    // Check AI Recommendation
+                    if (preg_match('/AI Recommendation:\s*(Suggested ✅)/', $gptResponse)) {
+                        // Prevent forwarding message to the bot itself
+                        if ($chatId != $botChatId) {
                             $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
-
-                            // Extract AI Rating
-                            preg_match('/Risk:\s*(\d+)/', $gptResponse, $matches);
-                            $gptRating = $matches[1] ?? null;
-
-                            // Save message in TelegramMessage table
-                            TelegramMessage::create([
-                                'chat_id' => $chatId,
-                                'message_text' => $text,
-                                'chat_type' => $chatType,
-                                'channel_name' => $channelName,
-                                'AI_Rating' => $gptRating
-                            ]);
-
-                            $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
-                            $this->sendToChannel($signal);
-                        } else {
-                            $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
-                            Log::info("AI Recommendation not 'Suggested ✅': Signal ignored.");
                         }
+    
+                        // Extract AI Rating
+                        preg_match('/Risk:\s*(\d+)/', $gptResponse, $matches);
+                        $gptRating = $matches[1] ?? null;
+    
+                        // Save message in TelegramMessage table
+                        TelegramMessage::create([
+                            'chat_id' => $chatId,
+                            'message_text' => $signalText,
+                            'chat_type' => $chatType,
+                            'channel_name' => $channelName,
+                            'AI_Rating' => $gptRating
+                        ]);
+    
+                        $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
+                        $this->sendToChannel($signal);
                     } else {
-                        Log::info("GPT no signal: The sent message is not a trade signal, so it got ignored.");
+                        $this->sendTelegramMessage($botChatId, $botResponseText, $message['message_id']);
+                        Log::info("AI Recommendation not 'Suggested ✅': Signal ignored.");
                     }
+                } else {
+                    Log::info("GPT no signal: The sent message is not a trade signal, so it got ignored.");
                 }
             }
         }
-
-        return response()->json(['status' => 'ok']);
     }
-
+    
+    return response()->json(['status' => 'ok']);
+}
 
     //NOTE: Periodic check for updates in the channel.
 
@@ -168,7 +183,7 @@ class TelegramController extends Controller
                         At the end, tell if you recommend this signal or not
                         I want you to answer exactly in this pattern without any further explanations or changes, also set the block spacing and the format of the response to a neat and readable format: 
                         SIGNAL📈: 
-                        //the corrected signal here
+                        //the corrected signal in the cornix format here
                         AI Analysis ✨: 
                         Risk: //Your estimation / 10 (the emoji here)
                         Explanation:
@@ -279,5 +294,4 @@ private function extractSignal($aiResponse)
 
     return $matches[1] ?? 'No signal details found.';
 }
-
 }

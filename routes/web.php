@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\OpenAIController;
 use App\Http\Controllers\TelegramController;
 use Illuminate\Support\Facades\Route;
 
@@ -18,3 +17,6 @@ use Illuminate\Support\Facades\Route;
 Route::post('/telegram-webhook', [TelegramController::class, 'handleWebhook']);
 
 Route::get('/set-webhook', [TelegramController::class, 'setWebhook']);
+
+Route::post('/fetch-messages', [TelegramController::class, 'fetchMessages']);
+
