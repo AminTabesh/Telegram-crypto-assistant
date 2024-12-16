@@ -16,7 +16,7 @@ class TelegramController extends Controller
     public function setWebhook()
     {
         $botToken = env('TELEGRAM_BOT_TOKEN');
-        $webhookUrl = url('https://8e53-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
+        $webhookUrl = url('https://8d3a-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
         $url = "https://api.telegram.org/bot{$botToken}/setWebhook?url={$webhookUrl}/telegram-webhook";
 
         $response = Http::get($url);
@@ -167,7 +167,7 @@ class TelegramController extends Controller
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4-turbo', //Note: Can be 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo' 
                 'messages' => [
-                    ['role' => 'system', 'content' => "First, check if the provided message is a correct cryptocurrency trade signal. If not, return the exact text of 'Please send a valid signal to evaluate.'. Otherwise, you have to rate the signal based on: 
+                    ['role' => 'system', 'content' => "First, check if the provided message is a correct trade signal. If not, return the exact text of 'Please send a valid signal to evaluate.'. Otherwise, you have to rate the signal based on: 
                         1. Market Structure: Identify patterns such as higher highs, lower lows, and consolidation phases.
                         2. Trend Analysis: Utilize moving averages (e.g., 50-day and 200-day EMAs) to determine short- and long-term trends.
                         3. Volume Analysis: Assess volume spikes and divergences to gauge market sentiment and confirm price movements.
