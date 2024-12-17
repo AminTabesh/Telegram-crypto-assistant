@@ -11,12 +11,11 @@ use function PHPUnit\Framework\isEmpty;
 
 class TelegramController extends Controller
 { 
-    private $telegramService;
 
     public function setWebhook()
     {
         $botToken = env('TELEGRAM_BOT_TOKEN');
-        $webhookUrl = url('https://8d3a-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
+        $webhookUrl = url('https://2358-82-115-17-69.ngrok-free.app'); //TODO : Put actual url after deployment!!!
         $url = "https://api.telegram.org/bot{$botToken}/setWebhook?url={$webhookUrl}/telegram-webhook";
 
         $response = Http::get($url);
@@ -68,9 +67,11 @@ class TelegramController extends Controller
     
         // Process private chats
         if ($chatType === 'private') {
-            $signalText = $text ?? $caption;  // Use text or caption if available
+            $signalText = $text ?? $caption;  
             $responseText = $this->getChatGptResponse($signalText);
             $this->sendTelegramMessage($chatId, $responseText, $message['message_id']);
+            $signal = $this->extractSignal($responseText);
+            $this->sendToChannel($signal);
     
             if ($signalText && $responseText !== "Please send a valid signal to evaluate.") {
                 TelegramMessage::create([
@@ -85,7 +86,7 @@ class TelegramController extends Controller
         // Process channel posts
         if ($chatType === 'channel') {
             if ($text || $caption) {
-                $signalText = $text ?? $caption;  // Use text or caption if available
+                $signalText = $text ?? $caption;  
                 $gptResponse = $this->getChatGptResponse($signalText);
                 $botResponseText = "Url: $messageUrl" . "\n\n" . $gptResponse;
                 // $avgRating = TelegramController::calculateAvgRating($channelName);
@@ -100,11 +101,11 @@ class TelegramController extends Controller
                             $this->forwardTelegramMessage($botChatId, $chatId, $message['message_id']);
                         }
     
-                        // Extract AI Rating
+
                         preg_match('/Risk:\s*(\d+)/', $gptResponse, $matches);
                         $gptRating = $matches[1] ?? null;
     
-                        // Save message in TelegramMessage table
+
                         TelegramMessage::create([
                             'chat_id' => $chatId,
                             'message_text' => $signalText,
